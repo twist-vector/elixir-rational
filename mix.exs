@@ -3,7 +3,7 @@ defmodule Rational.Mixfile do
 
   def project do
     [app: :rational,
-     version: "0.1.3",
+     version: "0.2.0",
      description: description,
      package: package,
      elixir: "~> 1.1",

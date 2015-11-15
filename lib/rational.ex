@@ -30,7 +30,9 @@ defmodule Rational do
   @typedoc """
    Rational numbers (num/den)
    """
-  @type rational :: %Rational{num: integer, den: integer}
+  @type rational :: %Rational{
+    num: integer,
+    den: non_neg_integer}
 
   @doc """
   Finds the greatest common divisor of a pair of numbers. The greatest
@@ -61,7 +63,6 @@ defmodule Rational do
   def gcd(m,n) do
     cond do
       n == 0        -> m
-      #rem(m,n) == 0 -> n
       true          -> gcd(n, rem(m,n))
     end
   end
@@ -84,16 +85,12 @@ defmodule Rational do
 
       iex> Rational.sign(-3)
       -1
-
-  #### To Do
-  This function uses a direct comparison with 0 (that is it uses x==0).  This
-  is probably not a good idea.  Rather it should use an approximate equality
-  so it's accurate with floats.
   """
   @spec sign(number) :: -1 | 0 | 1
   def sign(x) when x < 0, do: -1
   def sign(x) when x > 0, do: +1
   def sign(_), do: 0
+
 
 
   @doc """
@@ -123,9 +120,17 @@ defmodule Rational do
 
       iex> Rational.new(-3, -4)
       %Rational{den: 4, num: 3}
+
+      iex> Rational.new(0,0)
+      ** (ArgumentError) cannot create nan (den=0)
   """
   @spec new(integer, integer) :: rational
-  def new(numerator \\ 0, denominator \\ 1) do
+  def new(numerator \\ 0, denominator \\ 1)   # Bodyless clause to set defaults
+
+  # Handle NaN cases
+  def new(_,0), do: raise ArgumentError, message: "cannot create nan (den=0)"
+
+  def new(numerator, denominator) do
     g = gcd(numerator, denominator)
 
     # Want to form rational as (numerator/g, denominator/g).  Force the
@@ -230,25 +235,75 @@ defmodule Rational do
 
 
   @doc """
+  Compares two Rationals. If the first number (a) is greater than the second
+  number (b), 1 is returned, if a is less than b, -1 is returned. Otherwise,
+  if both numbers are equal and 0 is returned.
+
+  #### See also
+  [gt/2](#gt/2), [le/2](#le/2)
+
+  #### Examples
+      iex> Rational.compare( Rational.new(3,4), Rational.new(5,8) )
+      1
+
+      iex> Rational.compare( Rational.new(-3,4), Rational.new(-5,8) )
+      -1
+
+      iex> Rational.compare( Rational.new(3,64), Rational.new(3,64) )
+      0
+  """
+ @spec compare(rational, rational) :: (-1 | 0 | 1)
+ def compare(a,b) do
+   x = sub(a,b)
+   cond do
+     x.num == 0      -> 0
+     sign(x.num) < 0 -> -1
+     sign(x.num) > 0 -> 1
+   end
+ end
+
+
+
+  @doc """
+  Returns a boolean indicating whether parameter a is equal to parameter b.
+
+  #### See also
+  [gt/2](#gt/2), [le/2](#le/2)
+
+  #### Examples
+      iex> Rational.equal?( Rational.new(), Rational.new(0,1) )
+      true
+
+      iex> Rational.equal?( Rational.new(3,4), Rational.new(5,8) )
+      false
+
+      iex> Rational.equal?( Rational.new(-3,4), Rational.new(-3,4) )
+      true
+  """
+  @spec equal?(rational, rational) :: boolean
+  def equal?(a, b) do
+    compare(a,b) == 0
+  end
+
+  @doc """
   Returns a boolean indicating whether the parameter a is less than parameter b.
 
   #### See also
   [gt/2](#gt/2), [le/2](#le/2)
 
   #### Examples
-      iex> Rational.lt( Rational.new(13,32), Rational.new(5,64) )
+      iex> Rational.lt?( Rational.new(13,32), Rational.new(5,64) )
       false
 
-      iex> Rational.lt( Rational.new(-3,4), Rational.new(-5,8) )
+      iex> Rational.lt?( Rational.new(-3,4), Rational.new(-5,8) )
       true
 
-      iex> Rational.lt( Rational.new(-3,4), Rational.new(5,8) )
+      iex> Rational.lt?( Rational.new(-3,4), Rational.new(5,8) )
       true
   """
-  @spec lt(rational, rational) :: boolean
-  def lt(a, b) do
-    x = sub(a,b)
-    sign(x.num) < 0
+  @spec lt?(rational, rational) :: boolean
+  def lt?(a, b) do
+    compare(a,b) == -1
   end
 
 
@@ -260,28 +315,27 @@ defmodule Rational do
   [ge/2](#ge/2), [lt/2](#lt/2)
 
   #### Examples
-      iex> Rational.le( Rational.new(13,32), Rational.new(5,64) )
+      iex> Rational.le?( Rational.new(13,32), Rational.new(5,64) )
       false
 
-      iex> Rational.le( Rational.new(-3,4), Rational.new(-5,8) )
+      iex> Rational.le?( Rational.new(-3,4), Rational.new(-5,8) )
       true
 
-      iex> Rational.le( Rational.new(-3,4), Rational.new(5,8) )
+      iex> Rational.le?( Rational.new(-3,4), Rational.new(5,8) )
       true
 
-      iex> Rational.le( Rational.new(3,4), Rational.new(3,4) )
+      iex> Rational.le?( Rational.new(3,4), Rational.new(3,4) )
       true
 
-      iex> Rational.le( Rational.new(-3,4), Rational.new(-3,4) )
+      iex> Rational.le?( Rational.new(-3,4), Rational.new(-3,4) )
       true
 
-      iex> Rational.le( Rational.new(), Rational.new() )
+      iex> Rational.le?( Rational.new(), Rational.new() )
       true
   """
-  @spec le(rational, rational) :: boolean
-  def le(a, b) do
-    x = sub(a,b)
-    sign(x.num) <= 0
+  @spec le?(rational, rational) :: boolean
+  def le?(a, b) do
+    compare(a,b) == -1  or  compare(a,b) == 0
   end
 
 
@@ -293,17 +347,17 @@ defmodule Rational do
   [lt/2](#lt/2), [le/2](#le/2)
 
   #### Examples
-      iex> Rational.gt( Rational.new(13,32), Rational.new(5,64) )
+      iex> Rational.gt?( Rational.new(13,32), Rational.new(5,64) )
       true
 
-      iex> Rational.gt( Rational.new(-3,4), Rational.new(-5,8) )
+      iex> Rational.gt?( Rational.new(-3,4), Rational.new(-5,8) )
       false
 
-      iex> Rational.gt( Rational.new(-3,4), Rational.new(5,8) )
+      iex> Rational.gt?( Rational.new(-3,4), Rational.new(5,8) )
       false
   """
-  @spec gt(rational, rational) :: boolean
-  def gt(a, b), do: not le(a,b)
+  @spec gt?(rational, rational) :: boolean
+  def gt?(a, b), do: not le?(a,b)
 
 
   @doc """
@@ -314,26 +368,26 @@ defmodule Rational do
   [le/2](#le/2), [gt/2](#gt/2)
 
   #### Examples
-      iex> Rational.ge( Rational.new(13,32), Rational.new(5,64) )
+      iex> Rational.ge?( Rational.new(13,32), Rational.new(5,64) )
       true
 
-      iex> Rational.ge( Rational.new(-3,4), Rational.new(-5,8) )
+      iex> Rational.ge?( Rational.new(-3,4), Rational.new(-5,8) )
       false
 
-      iex> Rational.ge( Rational.new(-3,4), Rational.new(5,8) )
+      iex> Rational.ge?( Rational.new(-3,4), Rational.new(5,8) )
       false
 
-      iex> Rational.ge( Rational.new(3,4), Rational.new(3,4) )
+      iex> Rational.ge?( Rational.new(3,4), Rational.new(3,4) )
       true
 
-      iex> Rational.ge( Rational.new(-3,4), Rational.new(-3,4) )
+      iex> Rational.ge?( Rational.new(-3,4), Rational.new(-3,4) )
       true
 
-      iex> Rational.ge( Rational.new(), Rational.new() )
+      iex> Rational.ge?( Rational.new(), Rational.new() )
       true
   """
-  @spec ge(rational, rational) :: boolean
-  def ge(a, b), do: not lt(a,b)
+  @spec ge?(rational, rational) :: boolean
+  def ge?(a, b), do: not lt?(a,b)
 
 
   @doc """
