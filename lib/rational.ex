@@ -132,10 +132,12 @@ defmodule Rational do
   def new(numerator \\ 0, denominator \\ 1)   # Bodyless clause to set defaults
 
   # Handle NaN cases
-  def new(numerator, _) when numerator == 0, do: 0
   def new(_, denominator) when denominator == 0 do
     raise ArgumentError, message: "cannot create nan (den=0)"
   end
+
+  def new(numerator, _) when numerator == 0, do: 0
+
   def new(numerator, denominator) when is_integer(numerator) and is_integer(denominator) do
     g = gcd(numerator, denominator)
 
