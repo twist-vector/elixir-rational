@@ -14,16 +14,20 @@ defmodule Rational do
 
   ## Examples
       iex> Rational.new(3, 4)
-      %Rational{den: 4, num: 3}
+      #Rational<3/4>
 
       iex> Rational.new(8,12)
-      %Rational{den: 3, num: 2}
+      #Rational<2/3>
   """
 
   # Un-import Kernel functions to prevent name clashes.  We're redefining these
   # functions to work on rationals.
   import Kernel, except: [abs: 1, div: 2]
 
+  @compile {:inline, maybe_unwrap: 1}
+  if Code.ensure_loaded?(:hipe) do
+    @compile [:native, {:hipe, [:o3]}]
+  end
 
   defstruct num: 0, den: 1
 
@@ -60,11 +64,10 @@ defmodule Rational do
       iex> Rational.gcd(624129, 2061517)
       18913
   """
-  def gcd(m,n) do
-    cond do
-      n == 0        -> m
-      true          -> gcd(n, rem(m,n))
-    end
+  @spec gcd(integer, integer) :: integer
+  def gcd(m, 0), do: m
+  def gcd(m, n) do
+    gcd(n, rem(m, n))
   end
 
 
@@ -86,7 +89,8 @@ defmodule Rational do
       iex> Rational.sign(-3)
       -1
   """
-  @spec sign(number) :: -1 | 0 | 1
+  @spec sign(rational | number) :: -1 | 0 | 1
+  def sign(%{num: num}), do: sign(num)
   def sign(x) when x < 0, do: -1
   def sign(x) when x > 0, do: +1
   def sign(_), do: 0
@@ -101,45 +105,75 @@ defmodule Rational do
 
   #### Examples
       iex> Rational.new(3, 4)
-      %Rational{den: 4, num: 3}
+      #Rational<3/4>
 
       iex> Rational.new(8,12)
-      %Rational{den: 3, num: 2}
+      #Rational<2/3>
 
       iex> Rational.new()
-      %Rational{den: 1, num: 0}
+      0
 
       iex> Rational.new(3)
-      %Rational{den: 1, num: 3}
+      3
 
       iex> Rational.new(-3, 4)
-      %Rational{den: 4, num: -3}
+      #Rational<-3/4>
 
       iex> Rational.new(3, -4)
-      %Rational{den: 4, num: -3}
+      #Rational<-3/4>
 
       iex> Rational.new(-3, -4)
-      %Rational{den: 4, num: 3}
+      #Rational<3/4>
 
       iex> Rational.new(0,0)
       ** (ArgumentError) cannot create nan (den=0)
   """
-  @spec new(integer, integer) :: rational
+  @spec new(rational | number, integer | number) :: rational | number
   def new(numerator \\ 0, denominator \\ 1)   # Bodyless clause to set defaults
 
   # Handle NaN cases
-  def new(_,0), do: raise ArgumentError, message: "cannot create nan (den=0)"
-
-  def new(numerator, denominator) do
+  def new(numerator, _) when numerator == 0, do: 0
+  def new(_, denominator) when denominator == 0 do
+    raise ArgumentError, message: "cannot create nan (den=0)"
+  end
+  def new(numerator, denominator) when is_integer(numerator) and is_integer(denominator) do
     g = gcd(numerator, denominator)
 
     # Want to form rational as (numerator/g, denominator/g).  Force the
-    # division to give integers and force the sign to reside on the numerator.
-    n = round(numerator / g)
-    d = round(denominator / g)
+    # sign to reside on the numerator.
+    n = Kernel.div(numerator, g)
+    d = Kernel.div(denominator, g)
     sgn = sign(n)*sign(d)
 
     %Rational{num: sgn*Kernel.abs(n), den: Kernel.abs(d)}
+    |> maybe_unwrap()
+  end
+  def new(numerator, denominator) do
+    div(numerator, denominator)
+  end
+
+
+  @doc """
+  Returns the floating point value of the rational
+
+  #### Examples
+      iex> Rational.value( Rational.new(3,4) )
+      0.75
+
+      iex> Rational.value( Rational.add(0.2, 0.3) )
+      0.5
+
+      iex> Rational.value( Rational.new(-3,4) )
+      -0.75
+  """
+  @spec value(rational | number) :: number
+  def value(number) do
+    case maybe_wrap(number) do
+      %{den: 1, num: num} ->
+        num
+      %{den: den, num: num} ->
+        num / den
+    end
   end
 
 
@@ -151,17 +185,21 @@ defmodule Rational do
 
   #### Examples
       iex> Rational.add( Rational.new(3,4), Rational.new(5,8) )
-      %Rational{den: 8, num: 11}
+      #Rational<11/8>
 
       iex> Rational.add( Rational.new(13,32), Rational.new(5,64) )
-      %Rational{den: 64, num: 31}
+      #Rational<31/64>
 
       iex> Rational.add( Rational.new(-3,4), Rational.new(5,8) )
-      %Rational{den: 8, num: -1}
+      #Rational<-1/8>
   """
-  @spec add(rational, rational) :: rational
+  @spec add(rational | number, rational | number) :: rational | integer
+  def add(a, b) when a == 0, do: b
+  def add(a, b) when b == 0, do: a
   def add(a, b) do
-    new(a.num*b.den + b.num*a.den, a.den*b.den)
+    a = maybe_wrap(a)
+    b = maybe_wrap(b)
+    new(a.num * b.den + b.num * a.den, a.den * b.den)
   end
 
 
@@ -174,17 +212,21 @@ defmodule Rational do
 
   #### Examples
       iex> Rational.sub( Rational.new(3,4), Rational.new(5,8) )
-      %Rational{den: 8, num: 1}
+      #Rational<1/8>
 
       iex> Rational.sub( Rational.new(13,32), Rational.new(5,64) )
-      %Rational{den: 64, num: 21}
+      #Rational<21/64>
 
       iex> Rational.sub( Rational.new(-3,4), Rational.new(5,8) )
-      %Rational{den: 8, num: -11}
+      #Rational<-11/8>
   """
-  @spec sub(rational, rational) :: rational
+  @spec sub(rational | number, rational | number) :: rational | integer
+  def sub(a, b) when a == 0, do: neg(b)
+  def sub(a, b) when b == 0, do: a
   def sub(a, b) do
-    new(a.num*b.den - b.num*a.den, a.den*b.den)
+    a = maybe_wrap(a)
+    b = maybe_wrap(b)
+    new(a.num * b.den - b.num * a.den, a.den * b.den)
   end
 
 
@@ -197,17 +239,22 @@ defmodule Rational do
 
   #### Examples
       iex> Rational.mult( Rational.new(3,4), Rational.new(5,8) )
-      %Rational{den: 32, num: 15}
+      #Rational<15/32>
 
       iex> Rational.mult( Rational.new(13,32), Rational.new(5,64) )
-      %Rational{den: 2048, num: 65}
+      #Rational<65/2048>
 
       iex> Rational.mult( Rational.new(-3,4), Rational.new(5,8) )
-      %Rational{den: 32, num: -15}
+      #Rational<-15/32>
   """
-  @spec mult(rational, rational) :: rational
+  @spec mult(rational | number, rational | number) :: rational | integer
+  def mult(a, b) when a == 0 or b == 0 do
+    0
+  end
   def mult(a, b) do
-    new(a.num*b.num, a.den*b.den)
+    a = maybe_wrap(a)
+    b = maybe_wrap(b)
+    new(a.num * b.num, a.den * b.den)
   end
 
 
@@ -220,17 +267,23 @@ defmodule Rational do
 
   #### Examples
       iex> Rational.div( Rational.new(3,4), Rational.new(5,8) )
-      %Rational{den: 5, num: 6}
+      #Rational<6/5>
 
       iex> Rational.div( Rational.new(13,32), Rational.new(5,64) )
-      %Rational{den: 5, num: 26}
+      #Rational<26/5>
 
       iex> Rational.div( Rational.new(-3,4), Rational.new(5,8) )
-      %Rational{den: 5, num: -6}
+      #Rational<-6/5>
   """
-  @spec div(rational, rational) :: rational
+  @spec div(rational | number, rational | number) :: rational | integer
+  def div(a, _) when a == 0, do: 0
+  def div(_, b) when b == 0 do
+    raise ArgumentError, message: "cannot create nan (den=0)"
+  end
   def div(a, b) do
-    new(a.num*b.den, a.den*b.num)
+    a = maybe_wrap(a)
+    b = maybe_wrap(b)
+    new(a.num * b.den, a.den * b.num)
   end
 
 
@@ -252,15 +305,15 @@ defmodule Rational do
       iex> Rational.compare( Rational.new(3,64), Rational.new(3,64) )
       0
   """
- @spec compare(rational, rational) :: (-1 | 0 | 1)
- def compare(a,b) do
-   x = sub(a,b)
-   cond do
-     x.num == 0      -> 0
-     sign(x.num) < 0 -> -1
-     sign(x.num) > 0 -> 1
-   end
- end
+  @spec compare(rational | number, rational | number) :: (-1 | 0 | 1)
+  def compare(a, b) do
+    x = maybe_wrap(sub(a, b))
+    cond do
+      x.num == 0      -> 0
+      sign(x.num) < 0 -> -1
+      sign(x.num) > 0 -> 1
+    end
+  end
 
 
 
@@ -280,9 +333,9 @@ defmodule Rational do
       iex> Rational.equal?( Rational.new(-3,4), Rational.new(-3,4) )
       true
   """
-  @spec equal?(rational, rational) :: boolean
+  @spec equal?(rational | number, rational | number) :: boolean
   def equal?(a, b) do
-    compare(a,b) == 0
+    compare(a, b) == 0
   end
 
   @doc """
@@ -301,9 +354,9 @@ defmodule Rational do
       iex> Rational.lt?( Rational.new(-3,4), Rational.new(5,8) )
       true
   """
-  @spec lt?(rational, rational) :: boolean
+  @spec lt?(rational | number, rational | number) :: boolean
   def lt?(a, b) do
-    compare(a,b) == -1
+    compare(a, b) == -1
   end
 
 
@@ -333,9 +386,9 @@ defmodule Rational do
       iex> Rational.le?( Rational.new(), Rational.new() )
       true
   """
-  @spec le?(rational, rational) :: boolean
+  @spec le?(rational | number, rational | number) :: boolean
   def le?(a, b) do
-    compare(a,b) == -1  or  compare(a,b) == 0
+    compare(a, b) != 1
   end
 
 
@@ -356,7 +409,7 @@ defmodule Rational do
       iex> Rational.gt?( Rational.new(-3,4), Rational.new(5,8) )
       false
   """
-  @spec gt?(rational, rational) :: boolean
+  @spec gt?(rational | number, rational | number) :: boolean
   def gt?(a, b), do: not le?(a,b)
 
 
@@ -386,7 +439,7 @@ defmodule Rational do
       iex> Rational.ge?( Rational.new(), Rational.new() )
       true
   """
-  @spec ge?(rational, rational) :: boolean
+  @spec ge?(rational | number, rational | number) :: boolean
   def ge?(a, b), do: not lt?(a,b)
 
 
@@ -398,16 +451,17 @@ defmodule Rational do
 
   #### Examples
       iex> Rational.neg( Rational.new(3,4) )
-      %Rational{den: 4, num: -3}
+      #Rational<-3/4>
 
       iex> Rational.neg( Rational.new(-13,32) )
-      %Rational{den: 32, num: 13}
+      #Rational<13/32>
 
       iex> Rational.neg( Rational.new() )
-      %Rational{den: 1, num: 0}
+      0
   """
-  @spec neg(rational) :: rational
+  @spec neg(rational | number) :: rational | integer
   def neg(a) do
+    a = maybe_wrap(a)
     new(-a.num, a.den)
   end
 
@@ -421,17 +475,55 @@ defmodule Rational do
 
   #### Examples
       iex> Rational.abs( Rational.new(3,4) )
-      %Rational{den: 4, num: 3}
+      #Rational<3/4>
 
       iex> Rational.abs( Rational.new(-13,32) )
-      %Rational{den: 32, num: 13}
+      #Rational<13/32>
 
       iex> Rational.abs( Rational.new() )
-      %Rational{den: 1, num: 0}
+      0
   """
-  @spec abs(rational) :: rational
+  @spec abs(rational | number) :: rational | integer
   def abs(a) do
+    a = maybe_wrap(a)
     new(Kernel.abs(a.num), a.den)
   end
 
+  @spec maybe_wrap(rational | number) :: rational
+  defp maybe_wrap(a) when is_integer(a) do
+    %__MODULE__{num: a, den: 1}
+  end
+  defp maybe_wrap(a) when is_float(a) do
+    from_float(a)
+  end
+  defp maybe_wrap(rational = %__MODULE__{}) do
+    rational
+  end
+  defp maybe_wrap(other) do
+    raise ArgumentError, message: "unsupported datatype #{inspect(other)}"
+  end
+
+  @spec maybe_unwrap(rational) :: rational | integer
+  defp maybe_unwrap(%{den: 1, num: num}) do
+    num
+  end
+  defp maybe_unwrap(rational) do
+    rational
+  end
+
+  defp from_float(num, den \\ 1) do
+    truncated = trunc(num)
+    cond do
+      truncated == num ->
+        new(truncated, den)
+      true ->
+        from_float(num * 10, den * 10)
+    end
+  end
+end
+
+defimpl Inspect, for: Rational do
+  def inspect(%{num: num, den: den}, opts) do
+    "#Rational<#{Inspect.inspect(num, opts)}/#{Inspect.inspect(den, opts)}>"
+  end
 end

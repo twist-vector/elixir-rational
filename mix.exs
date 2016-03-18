@@ -20,8 +20,8 @@ defmodule Rational.Mixfile do
 
 
   defp deps do
-    [{:ex_doc, github: "elixir-lang/ex_doc"},
-     {:earmark, ">= 0.0.0"}]
+    [{:ex_doc, github: "elixir-lang/ex_doc", only: :dev},
+     {:earmark, ">= 0.0.0", only: :dev}]
   end
 
   defp description do
